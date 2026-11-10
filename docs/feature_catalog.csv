@@ -1,0 +1,10 @@
+feature,entity,description,unit
+user_activity_count,user,Training interactions at the model cutoff,count
+user_average_rating,user,Mean rating over training interactions,rating
+preferred_category,user,Most-interacted movie genre in training data,category
+days_since_last_interaction,user,Days from last training event to cutoff,days
+item_popularity,item,Number of training interactions for the item,count
+item_average_rating,item,Mean training rating for the item,rating
+item_rating_count,item,Training rating count for the item,count
+interaction_hour_utc,interaction,UTC hour derived from event timestamp,hour
+interaction_weekday_utc,interaction,UTC weekday derived from event timestamp,weekday

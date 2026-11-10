@@ -1,0 +1,89 @@
+{
+  "status": "passed",
+  "roll_number": "2025AG05563",
+  "validation": {
+    "timestamp": "2026-11-09T08:58:33.225839+00:00",
+    "passed": true,
+    "status": "passed",
+    "input_interactions": 100000,
+    "valid_interactions": 100000,
+    "quarantined_interactions": 0,
+    "duplicate_interactions": 0,
+    "missing_values": 0,
+    "invalid_rating_count": 0,
+    "invalid_data_type_counts": {
+      "userId": 0,
+      "movieId": 0,
+      "rating": 0,
+      "timestamp": 0
+    },
+    "invalid_timestamp_count": 0,
+    "duplicate_movie_ids": 0,
+    "duplicate_link_ids": 0,
+    "missing_movie_references": 0,
+    "missing_link_references": 0,
+    "rating_dtypes_after_cleaning": {
+      "userId": "int64",
+      "movieId": "int64",
+      "rating": "float64",
+      "timestamp": "int64"
+    },
+    "referential_integrity": {
+      "movies": true,
+      "links": true
+    },
+    "cold_start_users_below_5": 19662,
+    "cold_start_items_below_5": 5514,
+    "cold_start_user_threshold": 5,
+    "cold_start_item_threshold": 5,
+    "quarantine_path": "data\\errors\\invalid_interactions.csv"
+  },
+  "split": {
+    "train_rows": 80000,
+    "test_rows": 20000,
+    "train_max_timestamp": 1646884202,
+    "test_min_timestamp": 1646884248,
+    "chronological": true
+  },
+  "models": [
+    {
+      "model": "user_item_mean",
+      "strategy": "global_user_item_mean",
+      "RMSE": 0.9411183625658011,
+      "MAE": 0.7216973366179756,
+      "Precision@10": 0.0,
+      "Recall@10": 0.0,
+      "NDCG@10": 0.0,
+      "Coverage": 0.0015043763676148797,
+      "Diversity": 0.782222222222222,
+      "K": 10,
+      "RankingUsers": 1000,
+      "RankingPopulation": 7101,
+      "RankingSampled": true
+    },
+    {
+      "model": "truncated_svd",
+      "n_components": 12,
+      "n_iter": 3,
+      "random_state": 42,
+      "RMSE": 1.02615767102209,
+      "MAE": 0.7848477869725844,
+      "Precision@10": 0.0038000000000000004,
+      "Recall@10": 0.02786904761904762,
+      "NDCG@10": 0.014844413115237647,
+      "Coverage": 0.02598468271334792,
+      "Diversity": 0.7631361552028217,
+      "K": 10,
+      "RankingUsers": 1000,
+      "RankingPopulation": 7101,
+      "RankingSampled": true
+    }
+  ],
+  "artifacts": {
+    "validation": "outputs/validation_report.json",
+    "comparison": "outputs/model_comparison.csv",
+    "experiment_tracking": "outputs/experiment_tracking.jsonl",
+    "feature_catalog": "docs/feature_catalog.csv",
+    "final_report": "reports\\final_report.pdf"
+  }
+}

@@ -1,0 +1,14 @@
+flowchart LR
+    A[MovieLens CSVs] --> B[Ingestion]
+    B --> C[Validation and error quarantine]
+    C --> D[Cleaning and time-based split]
+    D --> E[User, item, interaction features]
+    E --> F[Parquet feature store]
+    D --> G[User/item mean model]
+    D --> H[Truncated SVD model]
+    F --> G
+    F --> H
+    G --> I[Rating and ranking evaluation]
+    H --> I
+    I --> J[Comparison table, recommendations, tracking]
+    J --> K[Scheduled Python workflow]

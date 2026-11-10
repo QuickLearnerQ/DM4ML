@@ -1,0 +1,37 @@
+{
+  "timestamp": "2026-11-09T11:16:07.267716+00:00",
+  "passed": true,
+  "status": "passed",
+  "input_interactions": 100000,
+  "valid_interactions": 100000,
+  "quarantined_interactions": 0,
+  "duplicate_interactions": 0,
+  "missing_values": 0,
+  "invalid_rating_count": 0,
+  "invalid_data_type_counts": {
+    "userId": 0,
+    "movieId": 0,
+    "rating": 0,
+    "timestamp": 0
+  },
+  "invalid_timestamp_count": 0,
+  "duplicate_movie_ids": 0,
+  "duplicate_link_ids": 0,
+  "missing_movie_references": 0,
+  "missing_link_references": 0,
+  "rating_dtypes_after_cleaning": {
+    "userId": "int64",
+    "movieId": "int64",
+    "rating": "float64",
+    "timestamp": "int64"
+  },
+  "referential_integrity": {
+    "movies": true,
+    "links": true
+  },
+  "cold_start_users_below_5": 19662,
+  "cold_start_items_below_5": 5514,
+  "cold_start_user_threshold": 5,
+  "cold_start_item_threshold": 5,
+  "quarantine_path": "data\\errors\\invalid_interactions.csv"
+}
