@@ -2,9 +2,9 @@
 
 ROLL NUMBER: 2025AG05563
 
-GitHub repository: https://github.com/2025agA55/2025AG_Assignment2_DM4ML
+GitHub repository: https://github.com/QuickLearnerQ/DM4ML
 
-This repository implements a reproducible MovieLens recommendation pipeline using a custom JSONL experiment tracker, Parquet feature snapshots, two recommendation models, offline ranking evaluation, and a standard-library scheduler.
+This repository implements a reproducible MovieLens recommendation pipeline using a custom JSONL experiment tracker, Parquet feature snapshots, a popularity baseline, a personalized truncated-SVD model, offline ranking evaluation, and scheduled Python or optional Airflow orchestration.
 
 ## Architecture
 
@@ -15,14 +15,14 @@ flowchart LR
     C --> D[Cleaning and chronological split]
     D --> E[User, item, interaction features]
     E --> F[Parquet feature store]
-    D --> G[User/item mean model]
+    D --> G[Popularity baseline]
     D --> H[Truncated SVD model]
     F --> G
     F --> H
     G --> I[RMSE, MAE, Precision@10, Recall@10, NDCG@10, Coverage, Diversity]
     H --> I
     I --> J[Comparison, recommendations, experiment records, PDF report]
-    J --> K[Scheduled Python workflow]
+    J --> K[Scheduled Python workflow or Airflow DAG]
 ```
 
 The workflow refreshes the rendered [`docs/pipeline_architecture.png`](docs/pipeline_architecture.png) and the editable Mermaid source is at [`docs/pipeline_architecture.mmd`](docs/pipeline_architecture.mmd).
@@ -31,7 +31,8 @@ The workflow refreshes the rendered [`docs/pipeline_architecture.png`](docs/pipe
 
 | Module | Responsibility |
 |---|---|
-| `src/config.py` | Shared project paths and schema constants |
+| `configs/pipeline.json` | Train/test split, ranking, and model settings |
+| `src/config.py` | Shared project paths, schema constants, and settings validation |
 | `src/ingestion.py` | Dataset acquisition and CSV loading |
 | `src/validation.py` | Schema/value checks, normalization, error quarantine |
 | `src/preparation.py` | Chronological split, user summary, sparse matrix |
@@ -43,6 +44,7 @@ The workflow refreshes the rendered [`docs/pipeline_architecture.png`](docs/pipe
 | `src/reporting.py` | Feature catalog, architecture image, final PDF |
 | `src/pipeline.py` | Thin dependency-ordered workflow coordinator |
 | `src/scheduler.py` | One-shot and interval execution |
+| `dags/recommendation_pipeline.py` | Optional daily Airflow entry point for the same workflow |
 
 ## Setup
 
@@ -80,6 +82,8 @@ python src\scheduler.py --interval-hours 24
 
 The scheduler calls the same ordered workflow on each run; it sleeps between completed runs and surfaces failures rather than marking failed runs successful. Stop a repeating run with Ctrl+C.
 
+The shared settings are in `configs/pipeline.json`; invalid values fail at startup. To run with Airflow, install Apache Airflow separately using its version-specific installation constraints, install this project's `requirements.txt` in the Airflow environment, and place the repository's `dags/` directory on Airflow's DAG path. The `recommendation_pipeline` DAG runs daily, retries a failed run once, and invokes the same dependency-ordered pipeline as the local scheduler.
+
 ## Workflow and outputs
 
 | Stage | Implementation | Main output |
@@ -89,16 +93,16 @@ The scheduler calls the same ordered workflow on each run; it sleeps between com
 | Preparation | Stable chronological holdout; train timestamps strictly precede test timestamps | `data/processed/train.csv`, `test.csv`, user/item tables, sparse `user_item_matrix.npz` and ID maps |
 | Transformation | UTC interaction-time fields and train-cutoff aggregates | `data/features/*.parquet` |
 | Feature management | Reusable user/item/interaction Parquet snapshots | `docs/feature_catalog.csv` |
-| Model training | User/item mean baseline and truncated-SVD collaborative filtering | `models/*.pkl` |
-| Evaluation | Rating and top-10 ranking metrics | `outputs/model_comparison.csv` and `.json` |
+| Model training | Interaction-count popularity baseline and personalized truncated-SVD collaborative filtering | `models/*.pkl` |
+| Evaluation | RMSE, MAE, Precision@K, Recall@K, NDCG@K, Coverage, and Diversity; K configured in `configs/pipeline.json` | `outputs/model_comparison.csv` and `.json` |
 | Tracking | JSONL experiment records contain parameters, metrics, and artifact paths | `outputs/experiment_tracking.jsonl` |
-| Orchestration | Repeatable scheduled Python workflow | `src/scheduler.py` |
+| Orchestration | Repeatable scheduled Python workflow or optional daily Airflow DAG | `src/scheduler.py`; `dags/recommendation_pipeline.py` |
 
 Ranking relevance is held-out ratings of at least four stars. Precision, Recall, and NDCG are averaged over a deterministic sample of up to 1,000 users with at least one relevant test item; `RankingUsers`, `RankingPopulation`, and `RankingSampled` are in the comparison output. The cap bounds catalog-scoring runtime on the public mirror while making the comparison reproducible. Coverage is the share of catalog items recommended for the evaluation sample, and Diversity is mean pairwise genre Jaccard distance. RMSE and MAE are computed over the full test set for explicit ratings.
 
 The final run generates `reports/final_report.pdf` (three pages) with dataset provenance and timestamp limitations, design decisions, model comparison, and limitations. The machine-readable success summary is `outputs/metrics.json`; validation details and the model comparison are also persisted under `outputs/`.
 
-For the submission's successful-run screenshot, run the workflow in a visible terminal and save a screenshot showing the final `Pipeline completed successfully.` message and the `status: passed` summary as `docs/successful_run.png`. The screenshot is a manual capture because the scheduled workflow runs in a terminal and does not have a browser-based orchestration UI.
+For the submission's successful-run screenshot, run the current workflow in a visible terminal and save a screenshot showing the final `Pipeline completed successfully.` message and the `status: passed` summary as `docs/successful_run.png`. The checked-in screenshot predates the popularity-baseline update and should be recaptured after running the updated workflow. The screenshot is a manual capture because the local scheduler runs in a terminal and does not have a browser-based orchestration UI.
 
 ## Tests
 
@@ -114,7 +118,7 @@ ruff check src tests
 ruff format --check src tests
 ```
 
-The unit tests cover validation/quarantine, chronological splitting, point-in-time features, vectorized predictions, and model evaluation. The stage modules contain the implementations; `pipeline.py` only composes them.
+The unit tests cover validation/quarantine, chronological splitting, point-in-time features, popularity ranking, vectorized predictions, and model evaluation. The stage modules contain the implementations; `pipeline.py` only composes them.
 
 ## Limitations
 

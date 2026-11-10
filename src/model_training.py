@@ -19,6 +19,37 @@ class Recommender(Protocol):
     def score_items(self, user_id: int, item_ids: list[int]) -> np.ndarray: ...
 
 
+class PopularityRecommender:
+    """Rank items by training interaction count and predict ratings by item mean."""
+
+    def fit(self, train: pd.DataFrame) -> "PopularityRecommender":
+        if train.empty:
+            raise ValueError("Cannot fit the popularity recommender on an empty dataset.")
+        self.global_mean = float(train["rating"].mean())
+        item_stats = train.groupby("movieId")["rating"].agg(["size", "mean"]).sort_index()
+        self.popularity = item_stats["size"].to_dict()
+        self.item_means = item_stats["mean"].to_dict()
+        self.item_ids = item_stats.index.tolist()
+        self.item_index = pd.Index(self.item_ids)
+        self.popularity_values = item_stats["size"].to_numpy(dtype=float)
+        self.item_mean_values = item_stats["mean"].to_numpy(dtype=float)
+        return self
+
+    def predict(self, frame: pd.DataFrame) -> np.ndarray:
+        return frame["movieId"].map(self.item_means).fillna(self.global_mean).to_numpy(dtype=float)
+
+    def score_items(self, user_id: int, item_ids: list[int]) -> np.ndarray:
+        del user_id
+        indices = self.item_index.get_indexer(item_ids)
+        known = indices >= 0
+        scores = np.zeros(len(item_ids), dtype=float)
+        known_indices = indices[known]
+        scores[known] = (
+            self.popularity_values[known_indices] * 6 + self.item_mean_values[known_indices]
+        )
+        return scores
+
+
 class MeanBaseline:
     """Personalized mean estimator with global, user, and item averages."""
 

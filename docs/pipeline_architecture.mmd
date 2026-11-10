@@ -4,11 +4,11 @@ flowchart LR
     C --> D[Cleaning and time-based split]
     D --> E[User, item, interaction features]
     E --> F[Parquet feature store]
-    D --> G[User/item mean model]
+    D --> G[Popularity baseline]
     D --> H[Truncated SVD model]
     F --> G
     F --> H
     G --> I[Rating and ranking evaluation]
     H --> I
     I --> J[Comparison table, recommendations, tracking]
-    J --> K[Scheduled Python workflow]
+    J --> K[Scheduled Python workflow or Airflow DAG]

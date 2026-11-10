@@ -20,6 +20,7 @@ FEATURE_CATALOG = [
         "weekday",
     ),
 ]
+GITHUB_REPOSITORY_URL = "https://github.com/QuickLearnerQ/DM4ML"
 
 
 def write_feature_catalog(path: str | Path) -> Path:
@@ -129,7 +130,11 @@ def write_final_report(
                     "Features are stored as Parquet entity snapshots; the interaction matrix "
                     "is stored as sparse NPZ."
                 ),
-                "Models: user/item mean baseline and truncated-SVD collaborative filtering.",
+                (
+                    "Models: interaction-count popularity baseline and personalized "
+                    "truncated-SVD collaborative filtering."
+                ),
+                f"GitHub repository: {GITHUB_REPOSITORY_URL}",
             ],
         ),
         (
@@ -153,7 +158,10 @@ def write_final_report(
                     "JSONL tracking stores model parameters, metrics, and artifact paths "
                     "without a tracking server."
                 ),
-                "The Python scheduler can execute this workflow once or at a configured interval.",
+                (
+                    "The Python scheduler can execute this workflow once or at a configured "
+                    "interval; an optional daily Airflow DAG runs the same workflow."
+                ),
                 (
                     "MovieLens cold-start users/items, popularity bias, and offline metrics "
                     "limit generalization."
@@ -192,7 +200,9 @@ def write_final_report(
                 )
             y_position = 0.55 if page_number == 1 else 0.84
             for bullet in bullets:
-                axis.text(0.08, y_position, f"- {bullet}", fontsize=11, va="top", wrap=True)
+                text = axis.text(0.08, y_position, f"- {bullet}", fontsize=11, va="top", wrap=True)
+                if bullet.startswith("GitHub repository:"):
+                    text.set_url(GITHUB_REPOSITORY_URL)
                 y_position -= 0.09
             axis.text(
                 0.06, 0.03, f"Roll number: 2025AG05563 | Page {page_number + 1} of 3", fontsize=9

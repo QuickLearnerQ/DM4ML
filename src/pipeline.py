@@ -8,11 +8,11 @@ from typing import Any
 
 import pandas as pd
 
-from config import DATA_DIR, ROLL_NUMBER, ROOT
+from config import DATA_DIR, ROLL_NUMBER, ROOT, load_pipeline_settings
 from evaluation import evaluate_model
 from feature_management import OfflineFeatureStore
 from ingestion import DataIngestion, ingest, ingest_tables
-from model_training import MeanBaseline, SVDRecommender
+from model_training import MeanBaseline, PopularityRecommender, SVDRecommender
 from preparation import derive_user_metadata, prepare, save_interaction_matrix
 from reporting import (
     write_architecture_diagram,
@@ -29,6 +29,7 @@ __all__ = [
     "DataIngestion",
     "DataValidationError",
     "MeanBaseline",
+    "PopularityRecommender",
     "SVDRecommender",
     "build_features",
     "evaluate_model",
@@ -51,18 +52,23 @@ def _train_and_evaluate(
     movies: pd.DataFrame,
     models_dir: Path,
     ranking_k: int,
+    max_ranking_users: int,
+    model_settings: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], list[pd.DataFrame]]:
     """Fit each configured recommender, evaluate it, and save its artifact."""
     specifications = [
         (
-            "user_item_mean",
-            MeanBaseline(),
-            {"strategy": "global_user_item_mean"},
+            "popularity",
+            PopularityRecommender(),
+            {
+                "strategy": model_settings["popularity"]["strategy"],
+                "tie_breaker": model_settings["popularity"]["tie_breaker"],
+            },
         ),
         (
             "truncated_svd",
-            SVDRecommender(n_components=12, n_iter=3, random_state=42),
-            {"n_components": 12, "n_iter": 3, "random_state": 42},
+            SVDRecommender(**model_settings["truncated_svd"]),
+            model_settings["truncated_svd"],
         ),
     ]
     results: list[dict[str, Any]] = []
@@ -71,7 +77,14 @@ def _train_and_evaluate(
     for name, model, parameters in specifications:
         logger.info("Training model %s", name)
         model.fit(train)
-        metrics, recommendations = evaluate_model(model, train, test, movies, k=ranking_k)
+        metrics, recommendations = evaluate_model(
+            model,
+            train,
+            test,
+            movies,
+            k=ranking_k,
+            max_ranking_users=max_ranking_users,
+        )
         artifact = models_dir / f"{name}.pkl"
         with artifact.open("wb") as file:
             pickle.dump(model, file)
@@ -83,6 +96,7 @@ def _train_and_evaluate(
 
 def run() -> dict[str, Any]:
     """Run ingest, validate, prepare, transform, train, evaluate, and report."""
+    settings = load_pipeline_settings()
     ratings, movies, links = ingest_tables(DATA_DIR)
     logger.info("Validating %s interactions", len(ratings))
     clean, quality = validate_dataset(
@@ -93,7 +107,7 @@ def run() -> dict[str, Any]:
         DATA_DIR / "errors" / "invalid_interactions.csv",
     )
 
-    train, test = prepare(clean)
+    train, test = prepare(clean, test_size=settings["preparation"]["test_size"])
     processed_dir = DATA_DIR / "processed"
     processed_dir.mkdir(parents=True, exist_ok=True)
     train.to_csv(processed_dir / "train.csv", index=False)
@@ -113,7 +127,13 @@ def run() -> dict[str, Any]:
     write_architecture_diagram(ROOT / "docs" / "pipeline_architecture.png")
 
     results, recommendation_frames = _train_and_evaluate(
-        train, test, movies, ROOT / "models", ranking_k=10
+        train,
+        test,
+        movies,
+        ROOT / "models",
+        ranking_k=settings["evaluation"]["k"],
+        max_ranking_users=settings["evaluation"]["max_ranking_users"],
+        model_settings=settings["models"],
     )
     comparison = pd.DataFrame(results)
     outputs_dir = ROOT / "outputs"

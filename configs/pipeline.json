@@ -1,0 +1,20 @@
+{
+  "preparation": {
+    "test_size": 0.2
+  },
+  "evaluation": {
+    "k": 10,
+    "max_ranking_users": 1000
+  },
+  "models": {
+    "popularity": {
+      "strategy": "interaction_count",
+      "tie_breaker": "item_average_rating"
+    },
+    "truncated_svd": {
+      "n_components": 12,
+      "n_iter": 3,
+      "random_state": 42
+    }
+  }
+}
