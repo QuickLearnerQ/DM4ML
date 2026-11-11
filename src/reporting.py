@@ -1,5 +1,7 @@
 """Pipeline documentation artifacts generated from executed workflow results."""
 
+import io
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -78,13 +80,222 @@ def write_architecture_diagram(path: str | Path) -> Path:
     axis.text(
         4,
         0.13,
-        "Parquet features | mean baseline + truncated SVD | ranking and rating metrics",
+        "Parquet features | interaction-count popularity + truncated SVD | "
+        "ranking and rating metrics",
         ha="center",
         fontsize=10,
     )
     figure.savefig(destination, dpi=180, bbox_inches="tight")
     plt.close(figure)
     return destination
+
+
+def _draw_evidence_card(axis, title: str, artifact: str, lines: list[str]) -> None:
+    from matplotlib.patches import FancyBboxPatch
+
+    axis.set_xlim(0, 1)
+    axis.set_ylim(0, 1)
+    axis.axis("off")
+    axis.add_patch(
+        FancyBboxPatch(
+            (0.01, 0.02),
+            0.98,
+            0.96,
+            boxstyle="round,pad=0.012",
+            facecolor="#f4f8fc",
+            edgecolor="#315a7d",
+            linewidth=1.2,
+        )
+    )
+    axis.text(0.05, 0.86, title, fontsize=12, weight="bold", color="#173c5a", va="top")
+    axis.text(0.05, 0.69, artifact, fontsize=8, color="#526579", va="top", wrap=True)
+    axis.text(
+        0.05,
+        0.54,
+        "\n".join(lines),
+        fontsize=9,
+        color="#172b3a",
+        va="top",
+        linespacing=1.5,
+        wrap=True,
+        family="monospace",
+    )
+
+
+def _save_evidence_snapshot(pdf, figure, plt, mpimg) -> None:
+    image_buffer = io.BytesIO()
+    figure.savefig(image_buffer, format="png", dpi=180, facecolor="white")
+    image_buffer.seek(0)
+    image = mpimg.imread(image_buffer)
+    page, axis = plt.subplots(figsize=(11.69, 8.27))
+    page.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    axis.imshow(image)
+    axis.axis("off")
+    pdf.savefig(page)
+    plt.close(page)
+    plt.close(figure)
+
+
+def _write_execution_evidence(
+    pdf,
+    project_root: Path,
+    results: pd.DataFrame,
+    quality: dict,
+    train_count: int,
+    test_count: int,
+) -> None:
+    import matplotlib.image as mpimg
+    import matplotlib.pyplot as plt
+
+    data_dir = project_root / "data"
+    source_dir = data_dir / "ml-latest-small"
+    ratings = pd.read_csv(source_dir / "ratings.csv", nrows=3)
+    movies_count = len(pd.read_csv(source_dir / "movies.csv"))
+    links_count = len(pd.read_csv(source_dir / "links.csv"))
+    train = pd.read_csv(data_dir / "processed" / "train.csv", usecols=["timestamp"])
+    test = pd.read_csv(data_dir / "processed" / "test.csv", usecols=["timestamp"])
+    feature_files = {
+        name: data_dir / "features" / f"{name}.parquet"
+        for name in ("users", "items", "interactions")
+    }
+    feature_summaries = []
+    for name, path in feature_files.items():
+        frame = pd.read_parquet(path)
+        feature_summaries.append(f"{name}: {len(frame):,} rows, {len(frame.columns)} columns")
+
+    diagram_path = project_root / "docs" / "pipeline_architecture.png"
+    figure = plt.figure(figsize=(11.69, 8.27))
+    figure.suptitle(
+        "Execution evidence: ingestion, validation, preparation, and feature management",
+        fontsize=15,
+        weight="bold",
+        y=0.97,
+    )
+    diagram_axis = figure.add_axes([0.06, 0.70, 0.88, 0.20])
+    diagram_axis.imshow(mpimg.imread(diagram_path))
+    diagram_axis.axis("off")
+    cards = [
+        (
+            "1. Data ingestion",
+            "data/ml-latest-small/*.csv",
+            [
+                f"Ratings source: {quality['input_interactions']:,} interactions",
+                f"Movies: {movies_count:,} | Links: {links_count:,}",
+                f"Columns loaded: {', '.join(ratings.columns)}",
+                "Source preview read from the ingested CSV",
+            ],
+        ),
+        (
+            "2. Validation and quarantine",
+            "outputs/validation_report.json",
+            [
+                f"Status: {quality['status']}",
+                f"Valid: {quality['valid_interactions']:,}",
+                f"Quarantined: {quality['quarantined_interactions']:,}",
+                f"Referential integrity: {quality['referential_integrity']}",
+            ],
+        ),
+        (
+            "3. Preparation",
+            "data/processed/train.csv, test.csv, user_item_matrix.npz",
+            [
+                f"Train rows: {train_count:,} | Test rows: {test_count:,}",
+                f"Chronological: {train['timestamp'].max() < test['timestamp'].min()}",
+                f"Last train timestamp: {int(train['timestamp'].max())}",
+                f"First test timestamp: {int(test['timestamp'].min())}",
+            ],
+        ),
+        (
+            "4. Feature management",
+            "data/features/*.parquet and docs/feature_catalog.csv",
+            feature_summaries + ["Parquet snapshots read from the feature store"],
+        ),
+    ]
+    positions = [(0.05, 0.38), (0.52, 0.38), (0.05, 0.06), (0.52, 0.06)]
+    for (title, artifact, lines), (x_position, y_position) in zip(cards, positions, strict=True):
+        axis = figure.add_axes([x_position, y_position, 0.44, 0.27])
+        _draw_evidence_card(axis, title, artifact, lines)
+    figure.text(
+        0.05,
+        0.015,
+        "Visual evidence compiled from the successful run's generated files and metrics.",
+        fontsize=8,
+        color="#526579",
+    )
+    _save_evidence_snapshot(pdf, figure, plt, mpimg)
+
+    model_artifacts = []
+    for model in results["model"]:
+        artifact = project_root / "models" / f"{model}.pkl"
+        model_artifacts.append(f"{artifact.name}: {'present' if artifact.is_file() else 'missing'}")
+    tracking_path = project_root / "outputs" / "experiment_tracking.jsonl"
+    tracking_records = [
+        line for line in tracking_path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
+    recent_records = [json.loads(line) for line in tracking_records[-len(results) :]]
+    tracking_summary = [
+        f"Runs recorded: {len(tracking_records)} total",
+        *[f"{record['model']}: run {record['run_id']}" for record in recent_records],
+    ]
+    report_settings = (project_root / "dags" / "recommendation_pipeline.py").read_text(
+        encoding="utf-8"
+    )
+    airflow_schedule = (
+        "@daily" if 'schedule="@daily"' in report_settings else "See DAG configuration"
+    )
+    scheduler_source = (project_root / "src" / "scheduler.py").read_text(encoding="utf-8")
+    interval_option = "--interval-hours" if "--interval-hours" in scheduler_source else "not found"
+
+    figure, axes = plt.subplots(2, 2, figsize=(11.69, 8.27))
+    figure.suptitle(
+        "Execution evidence: model training, evaluation, tracking, and orchestration",
+        fontsize=15,
+        weight="bold",
+        y=0.98,
+    )
+    _draw_evidence_card(
+        axes[0, 0],
+        "5. Model training",
+        "models/*.pkl",
+        model_artifacts + ["Artifacts checked on disk after model training"],
+    )
+    metric_lines = []
+    metric_columns = ["model", "RMSE", "MAE", "Precision@10", "Recall@10", "NDCG@10"]
+    for row in results[metric_columns].itertuples(index=False, name=None):
+        metric_lines.append(
+            f"{row[0]}: RMSE {row[1]:.4f}, MAE {row[2]:.4f}, "
+            f"P@10 {row[3]:.4f}, R@10 {row[4]:.4f}, NDCG@10 {row[5]:.4f}"
+        )
+    _draw_evidence_card(
+        axes[0, 1],
+        "6. Evaluation",
+        "outputs/model_comparison.csv",
+        metric_lines + ["Values read from this run's model comparison"],
+    )
+    _draw_evidence_card(
+        axes[1, 0],
+        "7. Experiment tracking and reporting",
+        "outputs/experiment_tracking.jsonl and reports/final_report.pdf",
+        tracking_summary
+        + [
+            "Model metrics and artifact paths are recorded per run",
+            "This PDF includes the stage evidence pages",
+        ],
+    )
+    _draw_evidence_card(
+        axes[1, 1],
+        "8. Orchestration",
+        "src/scheduler.py and dags/recommendation_pipeline.py",
+        [
+            f"Pipeline status: {quality['status']}",
+            "Python scheduler: one-shot or repeating interval",
+            f"Interval option: {interval_option}",
+            f"Airflow schedule: {airflow_schedule}",
+            "DAG configuration evidence (not an Airflow execution log)",
+        ],
+    )
+    figure.tight_layout(rect=[0.03, 0.03, 0.97, 0.94])
+    _save_evidence_snapshot(pdf, figure, plt, mpimg)
 
 
 def write_final_report(
@@ -204,9 +415,15 @@ def write_final_report(
                 if bullet.startswith("GitHub repository:"):
                     text.set_url(GITHUB_REPOSITORY_URL)
                 y_position -= 0.09
-            axis.text(
-                0.06, 0.03, f"Roll number: 2025AG05563 | Page {page_number + 1} of 3", fontsize=9
-            )
+            axis.text(0.06, 0.03, f"Roll number: 2025AG05563 | Page {page_number + 1}", fontsize=9)
             pdf.savefig(figure, bbox_inches="tight")
             plt.close(figure)
+        _write_execution_evidence(
+            pdf,
+            project_root,
+            results,
+            quality,
+            train_count,
+            test_count,
+        )
     return report_path
