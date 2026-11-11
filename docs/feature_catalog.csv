@@ -8,3 +8,8 @@ item_average_rating,item,Mean training rating for the item,rating
 item_rating_count,item,Training rating count for the item,count
 interaction_hour_utc,interaction,UTC hour derived from event timestamp,hour
 interaction_weekday_utc,interaction,UTC weekday derived from event timestamp,weekday
+user_prior_rating_count,interaction,User interactions strictly before the event timestamp,count
+user_prior_average_rating,interaction,User mean rating strictly before the event timestamp,rating
+item_prior_rating_count,interaction,Item interactions strictly before the event timestamp,count
+item_prior_average_rating,interaction,Item mean rating strictly before the event timestamp,rating
+global_mean,interaction,Training-set mean rating,rating

@@ -9,19 +9,19 @@ from typing import Any
 import pandas as pd
 
 from config import DATA_DIR, ROLL_NUMBER, ROOT, load_pipeline_settings
-from evaluation import evaluate_model
-from feature_management import OfflineFeatureStore
-from ingestion import DataIngestion, ingest, ingest_tables
-from model_training import MeanBaseline, PopularityRecommender, SVDRecommender
-from preparation import derive_user_metadata, prepare, save_interaction_matrix
+from evaluation.evaluation import evaluate_model
+from features.feature_management import OfflineFeatureStore
+from ingestion.ingestion import DataIngestion, ingest
+from preparation.preparation import derive_user_metadata, prepare, save_interaction_matrix
 from reporting import (
     write_architecture_diagram,
     write_feature_catalog,
     write_final_report,
 )
-from tracking import track_experiment
-from transformation import build_feature_tables, build_features
-from validation import DataValidationError, validate_dataset
+from training.model_training import MeanBaseline, PopularityRecommender, SVDRecommender
+from training.tracking import track_experiment
+from transformation.transformation import build_feature_tables, build_features
+from validation.validation import DataValidationError, validate_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -97,8 +97,8 @@ def _train_and_evaluate(
 def run() -> dict[str, Any]:
     """Run ingest, validate, prepare, transform, train, evaluate, and report."""
     settings = load_pipeline_settings()
-    ratings, movies, links = ingest_tables(DATA_DIR)
-    logger.info("Validating %s interactions", len(ratings))
+    ratings, movies, links, users = DataIngestion(DATA_DIR).load_all_data()
+    logger.info("Ingested %s users and %s interactions", len(users), len(ratings))
     clean, quality = validate_dataset(
         ratings,
         movies,
@@ -118,11 +118,12 @@ def run() -> dict[str, Any]:
 
     features_dir = DATA_DIR / "features"
     users, items, interaction_features = build_feature_tables(train, movies)
+    train_features, _ = build_features(train)
     feature_store = OfflineFeatureStore(features_dir)
     feature_store.write("users", users)
     feature_store.write("items", items)
     feature_store.write("interactions", interaction_features)
-    feature_store.write("train_features", interaction_features)
+    feature_store.write("train_features", train_features)
     write_feature_catalog(ROOT / "docs" / "feature_catalog.csv")
     write_architecture_diagram(ROOT / "docs" / "pipeline_architecture.png")
 
@@ -165,6 +166,7 @@ def run() -> dict[str, Any]:
             "experiment_tracking": "outputs/experiment_tracking.jsonl",
             "feature_catalog": "docs/feature_catalog.csv",
             "final_report": str(report_path.relative_to(ROOT)),
+            "execution_evidence": "reports/execution_evidence.pdf",
         },
     }
     _write_json(outputs_dir / "metrics.json", summary)

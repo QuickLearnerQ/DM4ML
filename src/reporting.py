@@ -21,6 +21,31 @@ FEATURE_CATALOG = [
         "UTC weekday derived from event timestamp",
         "weekday",
     ),
+    (
+        "user_prior_rating_count",
+        "interaction",
+        "User interactions strictly before the event timestamp",
+        "count",
+    ),
+    (
+        "user_prior_average_rating",
+        "interaction",
+        "User mean rating strictly before the event timestamp",
+        "rating",
+    ),
+    (
+        "item_prior_rating_count",
+        "interaction",
+        "Item interactions strictly before the event timestamp",
+        "count",
+    ),
+    (
+        "item_prior_average_rating",
+        "interaction",
+        "Item mean rating strictly before the event timestamp",
+        "rating",
+    ),
+    ("global_mean", "interaction", "Training-set mean rating", "rating"),
 ]
 GITHUB_REPOSITORY_URL = "https://github.com/QuickLearnerQ/DM4ML"
 
@@ -148,7 +173,7 @@ def _write_execution_evidence(
     import matplotlib.pyplot as plt
 
     data_dir = project_root / "data"
-    source_dir = data_dir / "ml-latest-small"
+    source_dir = data_dir / "raw" / "ml-latest-small"
     ratings = pd.read_csv(source_dir / "ratings.csv", nrows=3)
     movies_count = len(pd.read_csv(source_dir / "movies.csv"))
     links_count = len(pd.read_csv(source_dir / "links.csv"))
@@ -177,7 +202,7 @@ def _write_execution_evidence(
     cards = [
         (
             "1. Data ingestion",
-            "data/ml-latest-small/*.csv",
+            "data/raw/ml-latest-small/*.csv",
             [
                 f"Ratings source: {quality['input_interactions']:,} interactions",
                 f"Movies: {movies_count:,} | Links: {links_count:,}",
@@ -313,6 +338,7 @@ def write_final_report(
     report_dir = project_root / "reports"
     report_dir.mkdir(parents=True, exist_ok=True)
     report_path = report_dir / "final_report.pdf"
+    evidence_path = report_dir / "execution_evidence.pdf"
     pages = [
         (
             "Recommendation Pipeline - Design",
@@ -418,6 +444,7 @@ def write_final_report(
             axis.text(0.06, 0.03, f"Roll number: 2025AG05563 | Page {page_number + 1}", fontsize=9)
             pdf.savefig(figure, bbox_inches="tight")
             plt.close(figure)
+    with PdfPages(evidence_path) as pdf:
         _write_execution_evidence(
             pdf,
             project_root,

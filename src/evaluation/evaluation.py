@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from model_training import Recommender, evaluate_explicit_ratings
+from training.model_training import Recommender, evaluate_explicit_ratings
 
 
 def _diversity(movie_ids: list[int], genres_by_item: dict[int, set[str]]) -> float:

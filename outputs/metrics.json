@@ -2,7 +2,7 @@
   "status": "passed",
   "roll_number": "2025AG05563",
   "validation": {
-    "timestamp": "2026-11-11T05:13:59.871375+00:00",
+    "timestamp": "2026-11-11T13:10:36.209462+00:00",
     "passed": true,
     "status": "passed",
     "input_interactions": 100000,
@@ -85,6 +85,7 @@
     "comparison": "outputs/model_comparison.csv",
     "experiment_tracking": "outputs/experiment_tracking.jsonl",
     "feature_catalog": "docs/feature_catalog.csv",
-    "final_report": "reports\\final_report.pdf"
+    "final_report": "reports\\final_report.pdf",
+    "execution_evidence": "reports/execution_evidence.pdf"
   }
 }
