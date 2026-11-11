@@ -98,33 +98,45 @@ def validate_dataset(
     invalid_type_counts: dict[str, int] = {}
     for column in ("userId", "movieId", "rating"):
         converted = pd.to_numeric(normalized[column], errors="coerce")
-        invalid_type_counts[column] = int((normalized[column].notna() & converted.isna()).sum())
-        reject(converted.isna(), f"invalid_or_missing_{column}")
+        invalid_numeric = converted.isna() | ~np.isfinite(converted.fillna(0))
+        invalid_type_counts[column] = int(
+            (normalized[column].notna() & invalid_numeric).sum()
+        )
+        reject(invalid_numeric, f"invalid_or_missing_{column}")
         normalized[column] = converted
 
     timestamps = _normalize_timestamp(normalized["timestamp"])
+    invalid_timestamps = timestamps.isna() | ~np.isfinite(timestamps.fillna(0))
     invalid_type_counts["timestamp"] = int(
-        (normalized["timestamp"].notna() & timestamps.isna()).sum()
+        (normalized["timestamp"].notna() & invalid_timestamps).sum()
     )
-    reject(timestamps.isna(), "invalid_or_missing_timestamp")
+    reject(invalid_timestamps, "invalid_or_missing_timestamp")
     reject(timestamps.notna() & (timestamps % 1 != 0), "invalid_timestamp_precision")
     normalized["timestamp"] = timestamps
     reject(normalized.isna().any(axis=1), "missing_required_value")
     reject(
-        (normalized["userId"] <= 0) | (normalized["userId"] % 1 != 0),
+        (normalized["userId"] <= 0)
+        | (normalized["userId"] % 1 != 0)
+        | (normalized["userId"] >= 2**63),
         "invalid_userId",
     )
     reject(
-        (normalized["movieId"] <= 0) | (normalized["movieId"] % 1 != 0),
+        (normalized["movieId"] <= 0)
+        | (normalized["movieId"] % 1 != 0)
+        | (normalized["movieId"] >= 2**63),
         "invalid_movieId",
     )
     reject(
-        (normalized["rating"] < 0.5)
+        ~np.isfinite(normalized["rating"].fillna(0))
+        | (normalized["rating"] < 0.5)
         | (normalized["rating"] > 5.0)
         | ((normalized["rating"] * 2) % 1 != 0),
         "invalid_rating",
     )
-    reject(normalized["timestamp"] < 0, "invalid_timestamp")
+    reject(
+        (normalized["timestamp"] < 0) | (normalized["timestamp"] >= 2**63),
+        "invalid_timestamp",
+    )
     now_seconds = datetime.now(timezone.utc).timestamp()
     reject(normalized["timestamp"] > now_seconds, "future_timestamp")
 
@@ -231,7 +243,7 @@ def validate_ratings(
 ) -> dict[str, Any]:
     """Load item references and run the canonical validation workflow."""
     root = Path(data_dir)
-    dataset_dir = root / "ml-latest-small"
+    dataset_dir = root / "raw" / "ml-latest-small"
     report_path = (
         root.parent / "outputs" / "validation_report.json"
         if root.name == "data"

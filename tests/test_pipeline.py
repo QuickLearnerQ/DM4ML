@@ -8,12 +8,13 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from config import load_pipeline_settings  # noqa: E402
-from evaluation import evaluate_model  # noqa: E402
-from feature_management import OfflineFeatureStore  # noqa: E402
-from model_training import MeanBaseline, PopularityRecommender, SVDRecommender  # noqa: E402
-from preparation import prepare  # noqa: E402
-from transformation import build_features  # noqa: E402
-from validation import validate_dataset  # noqa: E402
+from evaluation.evaluation import evaluate_model  # noqa: E402
+from features.feature_management import OfflineFeatureStore  # noqa: E402
+from ingestion.ingestion import DataIngestion  # noqa: E402
+from preparation.preparation import prepare  # noqa: E402
+from training.model_training import MeanBaseline, PopularityRecommender, SVDRecommender  # noqa: E402
+from transformation.transformation import build_features  # noqa: E402
+from validation.validation import validate_dataset  # noqa: E402
 
 
 class PipelineTests(unittest.TestCase):
@@ -96,6 +97,37 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(report["invalid_data_type_counts"]["userId"], 1)
         self.assertEqual(len(quarantined), 2)
 
+    def test_validation_quarantines_non_finite_values_instead_of_failing(self):
+        ratings = pd.concat(
+            [
+                self.ratings,
+                pd.DataFrame(
+                    [
+                        (float("inf"), 10, 4.0, 1100),
+                        (1, float("inf"), 4.0, 1200),
+                        (1, 10, 4.0, float("inf")),
+                        (1, 10, float("inf"), 1300),
+                    ],
+                    columns=self.ratings.columns,
+                ),
+            ],
+            ignore_index=True,
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            valid, report = validate_dataset(
+                ratings, self.movies, self.links, root / "report.json", root / "errors.csv"
+            )
+            quarantined = pd.read_csv(root / "errors.csv")
+
+        self.assertEqual(len(valid), len(self.ratings))
+        self.assertEqual(report["quarantined_interactions"], 4)
+        self.assertEqual(report["invalid_data_type_counts"]["userId"], 1)
+        self.assertEqual(report["invalid_data_type_counts"]["movieId"], 1)
+        self.assertEqual(report["invalid_data_type_counts"]["timestamp"], 1)
+        self.assertEqual(report["invalid_rating_count"], 1)
+        self.assertTrue(quarantined["validation_errors"].str.len().gt(0).all())
+
     def test_split_is_strictly_chronological(self):
         train, test = prepare(self.ratings, test_size=0.3)
         self.assertLess(train["timestamp"].max(), test["timestamp"].min())
@@ -105,6 +137,38 @@ class PipelineTests(unittest.TestCase):
         settings = load_pipeline_settings()
         self.assertEqual(settings["evaluation"]["k"], 10)
         self.assertEqual(settings["models"]["popularity"]["strategy"], "interaction_count")
+
+    def test_ingestion_loads_user_profiles_from_csv(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            dataset_dir = Path(temp_dir) / "raw" / "ml-latest-small"
+            dataset_dir.mkdir(parents=True)
+            self.ratings.to_csv(dataset_dir / "ratings.csv", index=False)
+            self.movies.to_csv(dataset_dir / "movies.csv", index=False)
+            self.links.to_csv(dataset_dir / "links.csv", index=False)
+            pd.DataFrame(
+                {"userId": [1, 2, 3], "region": ["north", "south", "west"]}
+            ).to_csv(dataset_dir / "users.csv", index=False)
+
+            ratings, movies, links, users = DataIngestion(temp_dir).load_all_data()
+
+        self.assertEqual(len(ratings), len(self.ratings))
+        self.assertEqual(len(movies), len(self.movies))
+        self.assertEqual(len(links), len(self.links))
+        self.assertEqual(users["region"].tolist(), ["north", "south", "west"])
+
+    def test_ingestion_derives_user_activity_when_profiles_are_unavailable(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            dataset_dir = Path(temp_dir) / "raw" / "ml-latest-small"
+            dataset_dir.mkdir(parents=True)
+            self.ratings.to_csv(dataset_dir / "ratings.csv", index=False)
+            self.movies.to_csv(dataset_dir / "movies.csv", index=False)
+            self.links.to_csv(dataset_dir / "links.csv", index=False)
+
+            _, _, _, users = DataIngestion(temp_dir).load_all_data()
+
+        self.assertEqual(set(users["userId"]), {1, 2, 3})
+        self.assertIn("total_ratings", users.columns)
+        self.assertIn("avg_rating", users.columns)
 
     def test_popularity_model_ranks_by_interaction_count(self):
         model = PopularityRecommender().fit(self.ratings)
@@ -156,6 +220,8 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(features.iloc[2]["user_prior_rating_count"], 1)
         self.assertEqual(features.iloc[2]["user_prior_average_rating"], 5.0)
         self.assertEqual(features.iloc[3]["user_prior_rating_count"], 3)
+        self.assertEqual(features.iloc[0]["global_mean"], 3.0)
+        self.assertEqual(features.iloc[1]["global_mean"], 5.0)
 
     def test_vectorized_baseline_scores_match_single_predictions(self):
         model = MeanBaseline().fit(self.ratings)
@@ -180,6 +246,52 @@ class PipelineTests(unittest.TestCase):
             pd.testing.assert_frame_equal(store.read("users"), frame)
             with self.assertRaises(ValueError):
                 store.write("../outside", frame)
+
+    def test_feature_store_serves_training_and_prediction_features(self):
+        from transformation.transformation import build_feature_tables
+
+        train = self.ratings.iloc[:8].copy()
+        catalog = pd.concat(
+            [
+                self.movies,
+                pd.DataFrame({"movieId": [13], "title": ["D"], "genres": ["Comedy"]}),
+            ],
+            ignore_index=True,
+        )
+        users, items, interactions = build_feature_tables(train, catalog)
+        training_features, _ = build_features(train)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = OfflineFeatureStore(temp_dir)
+            store.write("users", users)
+            store.write("items", items)
+            store.write("interactions", interactions)
+            store.write("train_features", training_features)
+
+            stored_training = store.read_training_features()
+            prediction_features = store.read_prediction_features(1, [13, 10])
+
+        self.assertIn("user_prior_average_rating", stored_training.columns)
+        self.assertIn("item_prior_rating_count", stored_training.columns)
+        self.assertIn("interaction_hour_utc", stored_training.columns)
+        self.assertEqual(prediction_features["movieId"].tolist(), [13, 10])
+        self.assertIn("user_average_rating", prediction_features.columns)
+        self.assertIn("preferred_category", prediction_features.columns)
+        self.assertIn("days_since_last_interaction", prediction_features.columns)
+        self.assertIn("item_popularity", prediction_features.columns)
+        self.assertEqual(prediction_features.loc[0, "item_popularity"], 0)
+        self.assertEqual(prediction_features.loc[0, "item_rating_count"], 0)
+
+    def test_prediction_features_reject_unknown_entities_and_duplicate_items(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = OfflineFeatureStore(temp_dir)
+            store.write("users", pd.DataFrame({"userId": [1], "feature": [0.5]}))
+            store.write("items", pd.DataFrame({"movieId": [10], "feature": [1.0]}))
+            with self.assertRaisesRegex(KeyError, "userId"):
+                store.read_prediction_features(99, [10])
+            with self.assertRaisesRegex(KeyError, "movieIds"):
+                store.read_prediction_features(1, [99])
+            with self.assertRaisesRegex(ValueError, "unique"):
+                store.read_prediction_features(1, [10, 10])
 
 
 if __name__ == "__main__":
